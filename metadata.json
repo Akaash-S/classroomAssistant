@@ -1,0 +1,5 @@
+{
+  "name": "Classroom AI Assistant",
+  "description": "AI-powered classroom assistant for teachers to record lectures, extract tasks, and provide summaries for students.",
+  "requestFramePermissions": ["microphone"]
+}
