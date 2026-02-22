@@ -1,11 +1,14 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import axios from 'axios';
 
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
+// Use the specific v1beta endpoint requested by the user
+const API_KEY = process.env.GEMINI_API_KEY || '';
+// Fallback to gemini-1.5-flash as it has more stable free-tier quotas than 2.0-flash for some API keys
+const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 export const extractLectureData = async (transcript: string) => {
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: `Analyze the following lecture transcript and extract key information in JSON format.
+  console.log('[Gemini] Extracting data from transcript...');
+
+  const prompt = `Analyze the following lecture transcript and extract key information in JSON format.
     
     Transcript:
     ${transcript}
@@ -23,33 +26,44 @@ export const extractLectureData = async (transcript: string) => {
           "subject": "Subject Name"
         }
       ]
-    }`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          summary: { type: Type.STRING },
-          key_points: { type: Type.ARRAY, items: { type: Type.STRING } },
-          exam_notes: { type: Type.ARRAY, items: { type: Type.STRING } },
-          tasks: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                due_date: { type: Type.STRING },
-                subject: { type: Type.STRING }
-              },
-              required: ["title", "description", "due_date", "subject"]
-            }
-          }
-        },
-        required: ["summary", "key_points", "exam_notes", "tasks"]
-      }
-    }
-  });
+    }`;
 
-  return JSON.parse(response.text || '{}');
+  try {
+    const response = await axios.post(`${MODEL_URL}?key=${API_KEY}`, {
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        responseMimeType: "application/json"
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      console.error('[Gemini] Empty response from API');
+      return { summary: '', key_points: [], exam_notes: [], tasks: [] };
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (parseErr) {
+      console.error('[Gemini] JSON Parse Error:', parseErr, 'Raw Text:', text);
+      return { summary: '', key_points: [], exam_notes: [], tasks: [] };
+    }
+  } catch (err: any) {
+    const errorMsg = err?.response?.data?.error?.message || err.message || 'Unknown Gemini Error';
+    console.error('[Gemini REST Error]', errorMsg);
+
+    // Log full error details for debugging status 500
+    if (err?.response?.data) {
+      console.error('[Gemini REST Full Details]', JSON.stringify(err.response.data, null, 2));
+    }
+
+    throw new Error(`Gemini API failed: ${errorMsg}`);
+  }
 };
