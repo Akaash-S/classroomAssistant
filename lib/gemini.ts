@@ -1,12 +1,12 @@
 import axios from 'axios';
 
-// Use the specific v1beta endpoint requested by the user
-const API_KEY = process.env.GEMINI_API_KEY || '';
-// Fallback to gemini-1.5-flash as it has more stable free-tier quotas than 2.0-flash for some API keys
-const MODEL_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+// Groq API Configuration
+const API_KEY = process.env.GROQ_API_KEY || '';
+const MODEL = "llama-3.3-70b-versatile";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const extractLectureData = async (transcript: string) => {
-  console.log('[Gemini] Extracting data from transcript...');
+  console.log('[Groq] Extracting data using Llama-3.3-70b...');
 
   const prompt = `Analyze the following lecture transcript and extract key information in JSON format.
     
@@ -29,41 +29,48 @@ export const extractLectureData = async (transcript: string) => {
     }`;
 
   try {
-    const response = await axios.post(`${MODEL_URL}?key=${API_KEY}`, {
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        responseMimeType: "application/json"
-      }
+    const response = await axios.post(GROQ_URL, {
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content: "You are an educational assistant that extracts structured data from lecture transcripts. You must ALWAYS return valid JSON."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2, // Lower temperature for more consistent extraction
     }, {
       headers: {
+        'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json'
       }
     });
 
-    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const content = response.data?.choices?.[0]?.message?.content;
 
-    if (!text) {
-      console.error('[Gemini] Empty response from API');
+    if (!content) {
+      console.error('[Groq] Empty response from API');
       return { summary: '', key_points: [], exam_notes: [], tasks: [] };
     }
 
     try {
-      return JSON.parse(text);
+      return JSON.parse(content);
     } catch (parseErr) {
-      console.error('[Gemini] JSON Parse Error:', parseErr, 'Raw Text:', text);
+      console.error('[Groq] JSON Parse Error:', parseErr, 'Raw Content:', content);
       return { summary: '', key_points: [], exam_notes: [], tasks: [] };
     }
   } catch (err: any) {
-    const errorMsg = err?.response?.data?.error?.message || err.message || 'Unknown Gemini Error';
-    console.error('[Gemini REST Error]', errorMsg);
+    const errorMsg = err?.response?.data?.error?.message || err.message || 'Unknown Groq Error';
+    console.error('[Groq API Error]', errorMsg);
 
-    // Log full error details for debugging status 500
     if (err?.response?.data) {
-      console.error('[Gemini REST Full Details]', JSON.stringify(err.response.data, null, 2));
+      console.error('[Groq API Full Details]', JSON.stringify(err.response.data, null, 2));
     }
 
-    throw new Error(`Gemini API failed: ${errorMsg}`);
+    throw new Error(`Groq API failed: ${errorMsg}`);
   }
 };
